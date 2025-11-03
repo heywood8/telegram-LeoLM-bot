@@ -1,0 +1,64 @@
+# Secrets are stored in k8s/secrets/pgadmin.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgadmin
+  namespace: telegram-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgadmin
+  template:
+    metadata:
+      labels:
+        app: pgadmin
+    spec:
+      containers:
+      - name: pgadmin
+        image: dpage/pgadmin4:latest
+        envFrom:
+        - secretRef:
+            name: pgadmin-secret
+        volumeMounts:
+        - name: pgadmin-data
+          mountPath: /var/lib/pgadmin
+        - name: pgadmin-servers
+          mountPath: /pgadmin4/servers.json
+          subPath: servers.json
+        ports:
+        - containerPort: 80
+      volumes:
+      - name: pgadmin-data
+        persistentVolumeClaim:
+          claimName: pgadmin-data
+      - name: pgadmin-servers
+        secret:
+          secretName: pgadmin-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgadmin
+  namespace: telegram-bot
+spec:
+  selector:
+    app: pgadmin
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: NodePort  # You can change this to LoadBalancer if needed
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgadmin-data
+  namespace: telegram-bot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

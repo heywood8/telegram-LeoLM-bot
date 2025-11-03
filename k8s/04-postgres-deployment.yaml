@@ -24,18 +24,6 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
-        readinessProbe:
-          exec:
-            command:
-            - pg_isready
-            - -d
-            - telegram_bot
-            - -U
-            - botuser
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 6
       volumes:
       - name: postgres-storage
         persistentVolumeClaim:
