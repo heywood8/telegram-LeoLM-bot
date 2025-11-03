@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: telegram-bot
+spec:
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: telegram-bot
+spec:
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-ui
+  namespace: telegram-bot
+spec:
+  selector:
+    app: redis-ui
+  ports:
+    - protocol: TCP
+      port: 5540
+      targetPort: 5540
+  type: NodePort  # or LoadBalancer depending on your setup

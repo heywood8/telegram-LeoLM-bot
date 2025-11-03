@@ -78,7 +78,7 @@ models/
 docker-compose.override.yml
 
 # Kubernetes secrets
-kubernetes/secrets/
+k8s/secrets/*.yaml
 
 # Temporary files
 tmp/

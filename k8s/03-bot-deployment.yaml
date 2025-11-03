@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot
+  namespace: telegram-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bot
+  template:
+    metadata:
+      labels:
+        app: bot
+    spec:
+      containers:
+      - name: bot
+        image: telegram-bot:latest  # Update with your actual image
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: postgres-config
+        - secretRef:
+            name: postgres-secret
+        - secretRef:
+            name: envs
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: "500m"
+            memory: 1Gi
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: workspace
+          mountPath: /tmp/bot_workspace
+      volumes:
+      - name: data
+        hostPath:
+          path: /app/data
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: bot-workspace

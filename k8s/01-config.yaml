@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: telegram-bot
+data:
+  POSTGRES_DB: telegram_bot
+  POSTGRES_USER: botuser
+  LLM_BASE_URL: https://ollama.com
+  LLM_TEMPERATURE: '0.2'
+  LLM_MAX_TOKENS: '2048'
+  LLM_TIMEOUT: '120'
+  REDIS_URL: redis://redis.telegram-bot.svc.cluster.local:6379/0
