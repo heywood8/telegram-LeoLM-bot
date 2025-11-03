@@ -92,6 +92,7 @@ class TelegramBot:
             self.application.add_handler(CommandHandler("help", bot_handlers.help_command))
             self.application.add_handler(CommandHandler("reset", bot_handlers.reset_command))
             self.application.add_handler(CommandHandler("get_system_prompt", bot_handlers.get_system_prompt_command))
+            self.application.add_handler(CommandHandler("set_system_prompt", bot_handlers.set_system_prompt_command))
             # Handle messages in private chats, groups, and supergroups
             self.application.add_handler(
                 MessageHandler(

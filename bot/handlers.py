@@ -37,6 +37,7 @@ class BotHandlers:
         self.llm_service = llm_service
         self.mcp_manager = mcp_manager
         self.rate_limiter = rate_limiter
+        self._waiting_for_prompt = {}
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command"""
@@ -55,6 +56,26 @@ class BotHandlers:
         )
         
         await update.message.reply_text(welcome_message)
+
+    async def set_system_prompt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /set_system_prompt command for admins"""
+        user = update.effective_user
+        chat_id = update.message.chat.id
+        
+        # Check admin
+        if user.id not in config.security.admin_ids:
+            await update.message.reply_text("❌ Эта команда доступна только администраторам.")
+            logger.info("Non-admin tried to set system prompt", user_id=user.id, chat_id=chat_id)
+            return
+        
+        # Mark user as waiting for prompt
+        self._waiting_for_prompt[chat_id] = user.id
+        
+        await update.message.reply_text(
+            "Пожалуйста, отправьте новый системный промпт следующим сообщением.\n"
+            "Для отмены используйте команду /cancel"
+        )
+        logger.info("Admin requested to set system prompt", user_id=user.id, chat_id=chat_id)
 
     async def get_system_prompt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /get_system_prompt command for admins"""
@@ -97,6 +118,7 @@ class BotHandlers:
         
         if is_admin:
             help_text += "/get_system_prompt - Show current system prompt\n"
+            help_text += "/set_system_prompt - Set new system prompt\n"
             
         help_text += "\nJust send me a message to get started!"
         
@@ -138,6 +160,70 @@ class BotHandlers:
         user = update.effective_user
         message = update.message
         message_text = message.text
+        chat_id = message.chat.id
+
+        # Check if this is a system prompt update from an admin
+        if chat_id in self._waiting_for_prompt:
+            if self._waiting_for_prompt[chat_id] == user.id:
+                # Remove the waiting state
+                del self._waiting_for_prompt[chat_id]
+                
+                if message_text.lower() == '/cancel':
+                    await message.reply_text("❌ Установка системного промпта отменена.")
+                    return
+                
+                try:
+                    # Store the new prompt in database
+                    from bot.database import async_session_factory
+                    from bot.models import SystemPrompt, User
+                    from sqlalchemy import select
+                    
+                    async with async_session_factory() as db:
+                        # Get or create user record
+                        result = await db.execute(select(User).where(User.telegram_id == user.id))
+                        db_user = result.scalar_one_or_none()
+                        if not db_user:
+                            db_user = User(
+                                telegram_id=user.id,
+                                username=user.username,
+                                first_name=user.first_name,
+                                last_name=user.last_name,
+                                is_admin=True
+                            )
+                            db.add(db_user)
+                            await db.flush()
+                        
+                        # Import text for raw SQL
+                        from sqlalchemy import text
+                        
+                        # Deactivate old prompts
+                        await db.execute(
+                            text("UPDATE system_prompts SET is_active = false WHERE is_active = true")
+                        )
+                        
+                        # Create new prompt
+                        new_prompt = SystemPrompt(
+                            prompt=message_text,
+                            set_by_user_id=db_user.id,
+                            is_active=True
+                        )
+                        db.add(new_prompt)
+                        await db.commit()
+                    
+                    # Update the LLM service
+                    self.llm_service.update_system_prompt(message_text)
+                    
+                    await message.reply_text("✅ Системный промпт успешно обновлен!")
+                    logger.info(
+                        "System prompt updated",
+                        user_id=user.id,
+                        chat_id=chat_id
+                    )
+                    return
+                except Exception as e:
+                    logger.error(f"Failed to update system prompt: {e}", exc_info=True)
+                    await message.reply_text("❌ Не удалось обновить системный промпт.")
+                    return
 
         # Strip leading assistant role markers that some providers include in the
         # incoming message (e.g. "[assistant] Hello"). Keep a short preview

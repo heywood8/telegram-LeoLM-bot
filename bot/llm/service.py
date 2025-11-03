@@ -14,13 +14,19 @@ class LLMService:
     @property
     def system_prompt(self) -> str:
         """Return the current system prompt (with tools if available)"""
-        # Default: no tools
+        if self.custom_system_prompt is not None:
+            return self.custom_system_prompt
         return self._load_system_prompt(has_tools=False)
+    
+    def update_system_prompt(self, new_prompt: str) -> None:
+        """Update the system prompt"""
+        self.custom_system_prompt = new_prompt
     """High-level LLM service orchestrator"""
     
     def __init__(self, provider: BaseLLMProvider):
         self.provider = provider
         self.base_system_prompt = None  # Will be set dynamically based on tools availability
+        self.custom_system_prompt = None  # For admin-set prompts
     
     def _load_system_prompt(self, has_tools: bool = False) -> str:
         """Load system prompt"""

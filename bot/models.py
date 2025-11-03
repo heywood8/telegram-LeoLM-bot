@@ -80,3 +80,18 @@ class MCPExecution(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     execution_time: Mapped[Optional[float]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SystemPrompt(Base):
+    """System prompt history"""
+    
+    __tablename__ = "system_prompts"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    set_by_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    set_by_user: Mapped["User"] = relationship("User")
