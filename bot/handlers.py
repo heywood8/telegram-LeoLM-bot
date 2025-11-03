@@ -133,7 +133,7 @@ class BotHandlers:
         from bot.database import async_session_factory
         async with async_session_factory() as db:
             session_manager = SessionManager(db)
-            user_session = await session_manager.get_session(chat_id, user.id)
+            user_session = await session_manager.get_session(chat_id, user.id, telegram_user=user)
             await session_manager.clear_session(user_session.session_id)
             await db.commit()
         
@@ -321,7 +321,7 @@ class BotHandlers:
                 session_manager = SessionManager(db)
                 # Use chat_id for session so context is shared across all users in the chat
                 chat_id = message.chat.id
-                user_session = await session_manager.get_session(chat_id, user.id)
+                user_session = await session_manager.get_session(chat_id, user.id, telegram_user=user)
                 
                 # Get conversation context
                 context_messages = await session_manager.get_context_window(

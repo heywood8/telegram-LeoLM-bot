@@ -56,7 +56,7 @@ class SessionManager:
         if self._redis:
             await self._redis.close()
     
-    async def get_session(self, user_id: int, telegram_id: int) -> UserSession:
+    async def get_session(self, user_id: int, telegram_id: int, *, telegram_user=None) -> UserSession:
         """Retrieve or create user session"""
         
         # Try to get from cache first
@@ -68,7 +68,7 @@ class SessionManager:
             return UserSession(**session_data)
         
         # Get or create user
-        user = await self._get_or_create_user(telegram_id)
+        user = await self._get_or_create_user(telegram_id, telegram_user)
         
         # Get or create session
         stmt = select(SessionModel).where(SessionModel.user_id == user.id).order_by(SessionModel.last_active.desc())
@@ -107,7 +107,7 @@ class SessionManager:
         
         return user_session
     
-    async def _get_or_create_user(self, telegram_id: int) -> User:
+    async def _get_or_create_user(self, telegram_id: int, telegram_user=None) -> User:
         """Get or create user"""
         stmt = select(User).where(User.telegram_id == telegram_id)
         result = await self.db.execute(stmt)
@@ -116,11 +116,30 @@ class SessionManager:
         if not user:
             user = User(
                 telegram_id=telegram_id,
+                username=getattr(telegram_user, 'username', None),
+                first_name=getattr(telegram_user, 'first_name', None),
+                last_name=getattr(telegram_user, 'last_name', None),
                 is_blocked=False,
                 is_admin=telegram_id in config.security.admin_ids,
             )
             self.db.add(user)
             await self.db.flush()
+        elif telegram_user:
+            # Update user info if it has changed
+            update_fields = {}
+            if user.username != getattr(telegram_user, 'username', None):
+                update_fields['username'] = getattr(telegram_user, 'username', None)
+            if user.first_name != getattr(telegram_user, 'first_name', None):
+                update_fields['first_name'] = getattr(telegram_user, 'first_name', None)
+            if user.last_name != getattr(telegram_user, 'last_name', None):
+                update_fields['last_name'] = getattr(telegram_user, 'last_name', None)
+            
+            if update_fields:
+                await self.db.execute(
+                    update(User)
+                    .where(User.id == user.id)
+                    .values(**update_fields)
+                )
         
         return user
     
