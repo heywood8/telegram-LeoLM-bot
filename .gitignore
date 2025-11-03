@@ -84,3 +84,6 @@ k8s/secrets/*.yaml
 tmp/
 temp/
 *.tmp
+
+# Local scripts
+scripts/local_*.sh

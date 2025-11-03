@@ -11,6 +11,11 @@ logger = structlog.get_logger()
 
 
 class LLMService:
+    @property
+    def system_prompt(self) -> str:
+        """Return the current system prompt (with tools if available)"""
+        # Default: no tools
+        return self._load_system_prompt(has_tools=False)
     """High-level LLM service orchestrator"""
     
     def __init__(self, provider: BaseLLMProvider):

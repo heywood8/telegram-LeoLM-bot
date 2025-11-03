@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Telegram bot handlers"""
 
 from telegram import Update
@@ -23,6 +24,26 @@ def escape_markdown_v2(text: str) -> str:
 
 
 class BotHandlers:
+    async def get_system_prompt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /get_system_prompt command for admins"""
+        user = update.effective_user
+        chat_id = update.message.chat.id
+        # Check admin
+        admin_ids = config.security.admin_ids if hasattr(config.security, 'admin_ids') else []
+        if user.id not in admin_ids:
+            await update.message.reply_text("❌ You are not authorized to view the system prompt.")
+            logger.info("Non-admin tried to access system prompt", user_id=user.id, chat_id=chat_id)
+            return
+        # Get current system prompt from LLMService
+        try:
+            system_prompt = getattr(self.llm_service, "system_prompt", None)
+            if not system_prompt:
+                system_prompt = "No system prompt is set."
+            await update.message.reply_text(f"Current system prompt:\n{system_prompt}")
+            logger.info("Admin viewed system prompt", user_id=user.id, chat_id=chat_id)
+        except Exception as e:
+            logger.error(f"Failed to get system prompt: {e}", exc_info=True)
+            await update.message.reply_text("❌ Failed to retrieve system prompt.")
     """Telegram bot message handlers"""
     
     def __init__(
@@ -40,40 +61,40 @@ class BotHandlers:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command"""
         user = update.effective_user
+        welcome_message = (
+            "👋 Привет! Я — бот с поддержкой AI. Я могу помочь вам с различными задачами и ответить на ваши вопросы.\n\n"
+            "Используйте /help чтобы увидеть список доступных команд."
+        )
         
-        welcome_message = f"""👋 Hello {user.first_name}!
-
-I'm an AI assistant powered by {config.llm.model_name}. I can help you with various tasks using advanced tools.
-
-📝 Commands:
-/help - Show this help message
-/reset - Clear conversation history
-/mcps - List available tools
-/settings - Manage preferences
-
-Just send me a message to get started!"""
-        
-        await update.message.reply_text(welcome_message)
+        # Log the start command
         logger.info(
             "User started bot",
             first_name=getattr(user, 'first_name', None),
             last_name=getattr(user, 'last_name', None),
             username=getattr(user, 'username', None),
         )
-    
+        
+        await update.message.reply_text(welcome_message)
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command"""
-        help_text = """🤖 *Bot Commands*
-
-/start - Start the bot
-/help - Show this help
-/reset - Clear conversation history
-
-💡 *How to use:*
-Simply send me any message and I'll respond using AI!
-"""
+        user = update.effective_user
+        admin_ids = config.security.admin_ids if hasattr(config.security, 'admin_ids') else []
+        is_admin = user.id in admin_ids
+        
+        help_text = "*Bot Commands*\n\n"
+        help_text += "/start - Start the bot\n"
+        help_text += "/help - Show this help\n"
+        help_text += "/reset - Clear conversation history\n"
+        help_text += "/settings - Manage preferences\n"
+        
+        if is_admin:
+            help_text += "/get_system_prompt - Show current system prompt\n"
+            
+        help_text += "\nJust send me a message to get started!"
+        
         await update.message.reply_text(help_text, parse_mode="Markdown")
-    
+
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /reset command"""
         user = update.effective_user
@@ -89,9 +110,9 @@ Simply send me any message and I'll respond using AI!
         
         # Different message for group vs private chats
         if update.message.chat.type in ["group", "supergroup"]:
-            await update.message.reply_text("✅ Shared chat conversation history cleared!")
+            await update.message.reply_text("✅ История общего чата очищена!")
         else:
-            await update.message.reply_text("✅ Conversation history cleared!")
+            await update.message.reply_text("✅ История разговора очищена!")
         
         logger.info(
             "User reset conversation",
@@ -101,6 +122,9 @@ Simply send me any message and I'll respond using AI!
             chat_id=chat_id,
             chat_type=update.message.chat.type,
         )
+    
+
+        
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle regular messages"""
@@ -373,26 +397,16 @@ Simply send me any message and I'll respond using AI!
 
                 # Normalize and clean response_text before saving/replying
                 if response_text is None:
-                    response_text = ''
-
-                if isinstance(response_text, str):
-                    # Strip leading role markers like "[assistant]", "assistant:", etc.
-                    response_text = re.sub(r'^\s*(?:\[(?:assistant)\]|\bassistant\b[:\-—]?)\s*', '', response_text, flags=re.IGNORECASE)
-
-                # Save messages to database
+                    response_text = "Извините, но я не смог сгенерировать ответ. Пожалуйста, попробуйте еще раз."
+                
+                # Save the message in the database
                 await session_manager.update_context(
-                    user_session.session_id,
-                    role="user",
-                    content=message_text
-                )
-                await session_manager.update_context(
-                    user_session.session_id,
+                    session_id=user_session.session_id,
                     role="assistant",
                     content=response_text
                 )
                 
                 await db.commit()
-            
             # Send response (guard network errors so handler doesn't crash)
             try:
                 if response_text and response_text.strip():
