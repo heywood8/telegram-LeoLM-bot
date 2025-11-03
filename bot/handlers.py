@@ -24,26 +24,6 @@ def escape_markdown_v2(text: str) -> str:
 
 
 class BotHandlers:
-    async def get_system_prompt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /get_system_prompt command for admins"""
-        user = update.effective_user
-        chat_id = update.message.chat.id
-        # Check admin
-        admin_ids = config.security.admin_ids if hasattr(config.security, 'admin_ids') else []
-        if user.id not in admin_ids:
-            await update.message.reply_text("❌ You are not authorized to view the system prompt.")
-            logger.info("Non-admin tried to access system prompt", user_id=user.id, chat_id=chat_id)
-            return
-        # Get current system prompt from LLMService
-        try:
-            system_prompt = getattr(self.llm_service, "system_prompt", None)
-            if not system_prompt:
-                system_prompt = "No system prompt is set."
-            await update.message.reply_text(f"Current system prompt:\n{system_prompt}")
-            logger.info("Admin viewed system prompt", user_id=user.id, chat_id=chat_id)
-        except Exception as e:
-            logger.error(f"Failed to get system prompt: {e}", exc_info=True)
-            await update.message.reply_text("❌ Failed to retrieve system prompt.")
     """Telegram bot message handlers"""
     
     def __init__(
@@ -75,6 +55,33 @@ class BotHandlers:
         )
         
         await update.message.reply_text(welcome_message)
+
+    async def get_system_prompt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /get_system_prompt command for admins"""
+        user = update.effective_user
+        chat_id = update.message.chat.id
+        
+        # Check admin
+        admin_ids = config.security.admin_ids
+        if user.id not in admin_ids:
+            await update.message.reply_text("❌ Эта команда доступна только администраторам.")
+            logger.info("Non-admin tried to access system prompt", user_id=user.id, chat_id=chat_id)
+            return
+        
+        # Get current system prompt from LLMService
+        try:
+            system_prompt = self.llm_service.system_prompt
+            if not system_prompt:
+                system_prompt = "Системный промпт не установлен."
+            
+            # Format the response in a readable way
+            response = "Текущий системный промпт:\n\n```\n" + system_prompt + "\n```"
+            
+            await update.message.reply_text(response, parse_mode="Markdown")
+            logger.info("Admin viewed system prompt", user_id=user.id, chat_id=chat_id)
+        except Exception as e:
+            logger.error(f"Failed to get system prompt: {e}", exc_info=True)
+            await update.message.reply_text("❌ Не удалось получить системный промпт.")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command"""
