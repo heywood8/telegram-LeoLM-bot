@@ -4,6 +4,7 @@ import asyncio
 import signal
 import sys
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.error import TelegramError
 import structlog
 
 from bot.config import config
@@ -17,6 +18,7 @@ from bot.mcp.plugins.web import WebMCP
 from bot.rate_limiter import RateLimiter
 from bot.handlers import BotHandlers
 from bot.utils import setup_logging
+from bot import __version__
 
 logger = structlog.get_logger()
 
@@ -112,6 +114,36 @@ class TelegramBot:
         
         logger.info("Bot handlers registered")
     
+    async def notify_admins_startup(self) -> None:
+        """Send startup notification to admin users"""
+        admin_ids = config.security.admin_ids
+        if not admin_ids:
+            logger.info("No admin users configured, skipping startup notification")
+            return
+        
+        mcp_count = len(self.mcp_manager.mcps) if self.mcp_manager else 0
+        mcp_names = ", ".join(self.mcp_manager.mcps.keys()) if mcp_count > 0 else "none"
+        
+        startup_message = (
+            f"🤖 *Bot Updated and Started*\n\n"
+            f"📦 Version: `{__version__}`\n"
+            f"🧠 Model: `{config.llm.model_name}`\n"
+            f"🔌 MCP Plugins: {mcp_count} ({mcp_names})\n"
+            f"⚡ Mode: {'Webhook' if config.app.use_webhook else 'Polling'}\n\n"
+            f"Bot is now online and ready to accept messages."
+        )
+        
+        for admin_id in admin_ids:
+            try:
+                await self.application.bot.send_message(
+                    chat_id=admin_id,
+                    text=startup_message,
+                    parse_mode="Markdown"
+                )
+                logger.info(f"Sent startup notification to admin {admin_id}")
+            except TelegramError as e:
+                logger.warning(f"Failed to send startup notification to admin {admin_id}: {e}")
+    
     async def start(self) -> None:
         """Start the bot"""
         
@@ -124,10 +156,16 @@ class TelegramBot:
             webhook_url = config.telegram.webhook_url
             logger.info(f"Starting webhook at {webhook_url}")
             
+            await self.application.initialize()
+            await self.application.start()
+            
             await self.application.bot.set_webhook(
                 url=f"{webhook_url}/{config.telegram.webhook_secret}",
                 allowed_updates=["message", "callback_query"]
             )
+            
+            # Send startup notification to admins
+            await self.notify_admins_startup()
             
             # Start webhook server
             await self.application.run_webhook(
@@ -147,6 +185,9 @@ class TelegramBot:
             )
             
             logger.info("Bot is running! Press Ctrl+C to stop.")
+            
+            # Send startup notification to admins
+            await self.notify_admins_startup()
             
             # Keep running
             stop_event = asyncio.Event()
