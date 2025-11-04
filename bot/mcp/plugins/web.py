@@ -98,6 +98,31 @@ class WebMCP(BaseMCP):
             # Otherwise treat as a search query
             return await self._search_web(url_or_query, top_n)
     
+    def _format_search_results(self, results: List[Dict[str, Any]], query: str) -> str:
+        """Format search results as readable text with links"""
+        if not results:
+            return f"No results found for '{query}'."
+        
+        formatted_text = f"Search results for '{query}':\n\n"
+        
+        for i, result in enumerate(results, 1):
+            title = result.get('title', 'No title')
+            snippet = result.get('snippet', 'No description available')
+            url = result.get('url', '')
+            
+            formatted_text += f"{i}. **{title}**\n"
+            formatted_text += f"   {snippet}\n\n"
+        
+        # Add direct links at the end
+        formatted_text += "**Direct links:**\n"
+        for i, result in enumerate(results, 1):
+            url = result.get('url', '')
+            title = result.get('title', f'Link {i}')
+            if url:
+                formatted_text += f"{i}. {title}: {url}\n"
+        
+        return formatted_text
+    
     async def _fetch_url(self, url: str) -> Dict[str, Any]:
         """Fetch content from a URL with retries and proper error handling"""
         # Security check - only allow specific domains (if configured)
@@ -210,7 +235,8 @@ class WebMCP(BaseMCP):
                     return {
                         "results": results,
                         "total_results": len(results),
-                        "success": True
+                        "success": True,
+                        "formatted_text": self._format_search_results(results, query)
                     }
                     
         except Exception as e:
@@ -269,6 +295,7 @@ class WebMCP(BaseMCP):
             return {
                 "query": query,
                 "success": True,
+                "formatted_text": search_results.get("formatted_text", "No results found."),
                 **search_results
             }
         except Exception as e:
@@ -277,5 +304,6 @@ class WebMCP(BaseMCP):
                 "query": query,
                 "error": str(e),
                 "success": False,
+                "formatted_text": f"Error: {str(e)}",
                 "results": []
             }
