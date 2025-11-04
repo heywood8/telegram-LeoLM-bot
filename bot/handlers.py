@@ -323,6 +323,14 @@ class BotHandlers:
                 chat_id = message.chat.id
                 user_session = await session_manager.get_session(chat_id, user.id, telegram_user=user)
                 
+                # Save user message first
+                await session_manager.update_context(
+                    session_id=user_session.session_id,
+                    role="user",
+                    content=message_text,
+                    metadata={"chat_type": message.chat.type}
+                )
+
                 # Get conversation context
                 context_messages = await session_manager.get_context_window(
                     user_session.session_id
@@ -492,11 +500,26 @@ class BotHandlers:
                 if response_text is None:
                     response_text = "Извините, но я не смог сгенерировать ответ. Пожалуйста, попробуйте еще раз."
                 
+                # Prepare message metadata
+                metadata = {
+                    "tool_called": tool_called,
+                    "websearch_called": websearch_called
+                }
+                
+                # Get token count if available
+                tokens = None
+                if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens'):
+                    tokens = response.usage.total_tokens
+                elif hasattr(response, 'tokens'):
+                    tokens = response.tokens
+                
                 # Save the message in the database
                 await session_manager.update_context(
                     session_id=user_session.session_id,
                     role="assistant",
-                    content=response_text
+                    content=response_text,
+                    tokens=tokens,
+                    metadata=metadata
                 )
                 
                 await db.commit()
