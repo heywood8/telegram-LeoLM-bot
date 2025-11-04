@@ -177,6 +177,7 @@ class SessionManager:
     ) -> None:
         """Add message to conversation history"""
         
+        # Create and save message
         message = MessageModel(
             session_id=session_id,
             role=role,
@@ -185,6 +186,7 @@ class SessionManager:
             message_metadata=metadata,
         )
         self.db.add(message)
+        await self.db.flush()  # Ensure message is saved
         
         # Update session last_active
         stmt = (

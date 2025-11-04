@@ -330,6 +330,8 @@ class BotHandlers:
                     content=message_text,
                     metadata={"chat_type": message.chat.type}
                 )
+                # Make sure the user message is committed
+                await db.commit()
 
                 # Get conversation context
                 context_messages = await session_manager.get_context_window(
