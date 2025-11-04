@@ -1,8 +1,9 @@
-FROM python:3.11-slim
+# Multi-stage build to reduce image size
+FROM python:3.11-slim as builder
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
@@ -14,9 +15,27 @@ RUN pip install --no-cache-dir poetry==1.7.1
 # Copy dependency files
 COPY pyproject.toml ./
 
-# Install dependencies
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root --only main
+# Install dependencies in a virtual environment
+RUN poetry config virtualenvs.create true \
+    && poetry install --no-interaction --no-ansi --no-root --only main \
+    && poetry export -f requirements.txt --output requirements.txt --without-hashes
+
+# Production stage - only the runtime dependencies
+FROM python:3.11-slim as production
+
+WORKDIR /app
+
+# Install only runtime system dependencies
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy only the requirements.txt from builder
+COPY --from=builder /app/requirements.txt ./
+
+# Install only the necessary Python packages
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY bot/ ./bot/
