@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import structlog
 import json
+from telegramify_markdown import convert
 
 from bot.session import SessionManager
 import re
@@ -553,41 +554,17 @@ class BotHandlers:
             # Send response (guard network errors so handler doesn't crash)
             try:
                 if response_text and response_text.strip():
-                    # Try Markdown first, then HTML, then plain text
-                    sent = False
-                    for parse_mode in ["Markdown", "HTML", None]:
-                        try:
-                            if parse_mode:
-                                await update.message.reply_text(response_text, parse_mode=parse_mode)
-                            else:
-                                await update.message.reply_text(response_text)
-                            sent = True
-                            logger.info(f"Successfully sent message with {parse_mode or 'plain text'}")
-                            break
-                        except Exception as markdown_error:
-                            logger.warning(
-                                f"Failed to send with {parse_mode or 'plain text'}, trying next option",
-                                exc_info=markdown_error
-                            )
-                            # Don't break here, continue to next parse_mode
+                    # Convert to MarkdownV2
+                    markdown_v2_text = convert(response_text)
                     
-                    if not sent:
-                        # Last resort: escape problematic characters and send as plain text
-                        clean_text = (
-                            response_text
-                            .replace('*', '\\*')
-                            .replace('_', '\\_')
-                            .replace('`', '\\`')
-                            .replace('[', '\\[')
-                            .replace(']', '\\]')
-                            .replace('(', '\\(')
-                            .replace(')', '\\)')
-                        )
-                        try:
-                            await update.message.reply_text(clean_text)
-                            logger.info("Successfully sent escaped plain text")
-                        except Exception as final_error:
-                            logger.error("Failed to send any format of response", exc_info=final_error)
+                    # Send with MarkdownV2 formatting
+                    try:
+                        await update.message.reply_text(markdown_v2_text, parse_mode="MarkdownV2")
+                        logger.info("Successfully sent message with MarkdownV2")
+                    except Exception as markdown_error:
+                        logger.warning("Failed to send with MarkdownV2, sending as plain text", exc_info=markdown_error)
+                        # Send as plain text without escaping special characters
+                        await update.message.reply_text(response_text)
                 else:
                     logger.warning("Response text is empty, sending fallback message")
                     await update.message.reply_text("🤔 Я получил пустой ответ. Попробуйте переформулировать вопрос.")

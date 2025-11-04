@@ -29,6 +29,7 @@ prometheus-client = "^0.19"
 structlog = "^23.2"
 alembic = "^1.12"
 psycopg2-binary = "^2.9"
+telegramify-markdown = "^0.1.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
