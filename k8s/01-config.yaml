@@ -13,3 +13,4 @@ data:
   REDIS_URL: redis://redis.telegram-bot.svc.cluster.local:6379/0
   MCP_WEBSEARCH_ENABLED: 'true'
   MCP_WEBSEARCH_SEARCH_ENGINE: 'duckduckgo'
+  WEB_ALLOW_ALL_DOMAINS: 'true'

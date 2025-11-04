@@ -553,12 +553,41 @@ class BotHandlers:
             # Send response (guard network errors so handler doesn't crash)
             try:
                 if response_text and response_text.strip():
-                    # Try Markdown formatting first, fall back to plain text if it fails
-                    try:
-                        await update.message.reply_text(response_text, parse_mode="Markdown")
-                    except Exception as markdown_error:
-                        logger.warning("Failed to send with Markdown, trying plain text", exc_info=markdown_error)
-                        await update.message.reply_text(response_text)
+                    # Try Markdown first, then HTML, then plain text
+                    sent = False
+                    for parse_mode in ["Markdown", "HTML", None]:
+                        try:
+                            if parse_mode:
+                                await update.message.reply_text(response_text, parse_mode=parse_mode)
+                            else:
+                                await update.message.reply_text(response_text)
+                            sent = True
+                            logger.info(f"Successfully sent message with {parse_mode or 'plain text'}")
+                            break
+                        except Exception as markdown_error:
+                            logger.warning(
+                                f"Failed to send with {parse_mode or 'plain text'}, trying next option",
+                                exc_info=markdown_error
+                            )
+                            # Don't break here, continue to next parse_mode
+                    
+                    if not sent:
+                        # Last resort: escape problematic characters and send as plain text
+                        clean_text = (
+                            response_text
+                            .replace('*', '\\*')
+                            .replace('_', '\\_')
+                            .replace('`', '\\`')
+                            .replace('[', '\\[')
+                            .replace(']', '\\]')
+                            .replace('(', '\\(')
+                            .replace(')', '\\)')
+                        )
+                        try:
+                            await update.message.reply_text(clean_text)
+                            logger.info("Successfully sent escaped plain text")
+                        except Exception as final_error:
+                            logger.error("Failed to send any format of response", exc_info=final_error)
                 else:
                     logger.warning("Response text is empty, sending fallback message")
                     await update.message.reply_text("🤔 Я получил пустой ответ. Попробуйте переформулировать вопрос.")

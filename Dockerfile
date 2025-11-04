@@ -1,5 +1,5 @@
 # Multi-stage build to reduce image size
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN poetry config virtualenvs.create true \
     && poetry export -f requirements.txt --output requirements.txt --without-hashes
 
 # Production stage - only the runtime dependencies
-FROM python:3.11-slim as production
+FROM python:3.11-slim AS production
 
 WORKDIR /app
 
