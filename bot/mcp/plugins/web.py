@@ -5,7 +5,8 @@ import aiohttp
 import asyncio
 import structlog
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
+from bs4 import BeautifulSoup
 from bot.mcp.base import BaseMCP
 
 logger = structlog.get_logger()
@@ -131,55 +132,49 @@ class WebMCP(BaseMCP):
     async def _search_web(self, query: str, top_n: int) -> Dict[str, Any]:
         """Search the web using DuckDuckGo Lite"""
         try:
-            if "weather" in query.lower():
-                # For weather queries, redirect to wttr.in
-                location = query.lower().replace("weather", "").strip()
-                return await self._fetch_url(f"https://wttr.in/{location}?format=3")
-
             async with aiohttp.ClientSession() as session:
-                # Use DuckDuckGo Lite HTML search
-                url = "https://lite.duckduckgo.com/lite"
+                # Use DuckDuckGo HTML search to avoid API issues
+                url = "https://html.duckduckgo.com/html/"
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                    'Connection': 'keep-alive',
                 }
-                params = {
-                    'q': query,
-                    'kl': 'us-en'  # language/region
-                }
+                params = {'q': query}
                 
                 async with session.post(url, data=params, headers=headers) as response:
                     if response.status != 200:
                         raise Exception(f"Search failed with status {response.status}")
                     
                     text = await response.text()
+                    logger.debug(f"Got search response: {text[:500]}...")
                     
-                    # Extract search results using basic string parsing
+                    # Use BeautifulSoup for robust HTML parsing
+                    soup = BeautifulSoup(text, 'lxml')
                     results = []
-                    lines = text.split('\n')
-                    current_result = {}
                     
-                    for line in lines:
-                        if '<a class="result-link"' in line:
-                            if current_result and len(results) < top_n:
-                                results.append(current_result)
-                            current_result = {}
-                            # Extract URL and title
-                            url_start = line.find('href="') + 6
-                            url_end = line.find('"', url_start)
-                            current_result['url'] = line[url_start:url_end]
-                            # Extract title
-                            title_start = line.find('>', url_end) + 1
-                            title_end = line.find('</a>', title_start)
-                            current_result['title'] = line[title_start:title_end].strip()
-                        elif '<td class="result-snippet"' in line:
-                            # Extract snippet
-                            snippet_start = line.find('>') + 1
-                            snippet_end = line.find('</td>', snippet_start)
-                            current_result['snippet'] = line[snippet_start:snippet_end].strip()
-                    
-                    # Add the last result if we have one
-                    if current_result and len(results) < top_n:
-                        results.append(current_result)
+                    for result in soup.find_all('div', class_='result'):
+                        if len(results) >= top_n:
+                            break
+                        
+                        title_elem = result.find('a', class_='result__a')
+                        snippet_elem = result.find('a', class_='result__snippet')
+                        url_elem = result.find('a', class_='result__url')
+                        
+                        if title_elem and snippet_elem and url_elem:
+                            # Decode URL from DDG's redirect
+                            raw_url = url_elem['href']
+                            unquoted_url = unquote(raw_url)
+                            
+                            # Extract the actual URL from the 'uddg' parameter
+                            final_url = unquoted_url[unquoted_url.find('uddg=')+5:] if 'uddg=' in unquoted_url else unquoted_url
+                            
+                            results.append({
+                                'title': title_elem.text.strip(),
+                                'snippet': snippet_elem.text.strip(),
+                                'url': final_url
+                            })
                     
                     return {
                         "results": results,
