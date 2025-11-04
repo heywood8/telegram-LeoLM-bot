@@ -13,6 +13,7 @@ from bot.llm.provider import OllamaProvider
 from bot.llm.service import LLMService
 from bot.mcp.manager import MCPManager
 from bot.mcp.plugins import FileSystemMCP, DatabaseMCP
+from bot.mcp.plugins.web import WebMCP
 from bot.rate_limiter import RateLimiter
 from bot.handlers import BotHandlers
 from bot.utils import setup_logging
@@ -62,6 +63,13 @@ class TelegramBot:
         if config.mcp.database_enabled and config.mcp.database_url:
             db_mcp = DatabaseMCP({"database_url": config.mcp.database_url})
             await self.mcp_manager.register_mcp(db_mcp)
+            
+        # Register web tools (both search and URL fetch)
+        web_mcp = WebMCP({
+            "api_key": config.mcp.websearch_api_key,
+            "search_engine": config.mcp.websearch_search_engine
+        })
+        await self.mcp_manager.register_mcp(web_mcp)
         
         logger.info(f"Registered {len(self.mcp_manager.mcps)} MCP plugins")
         

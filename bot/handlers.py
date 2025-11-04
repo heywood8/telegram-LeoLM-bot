@@ -389,9 +389,34 @@ class BotHandlers:
                     else:
                         logger.info("Tool calls executed, sending results back to model", num_calls=len(tool_results_list))
                         
-                        # Send tool results back to model to generate a natural language response
-                        # Add assistant message with original tool calls
-                        # Note: For Ollama, arguments must be an object (dict), not a JSON string
+                        # Save assistant's tool calls as a message
+                        tool_calls_metadata = {
+                            "tool_calls": [
+                                {
+                                    "name": tc.function.name,
+                                    "arguments": json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                                } for tc in response.tool_calls
+                            ]
+                        }
+                        await session_manager.update_context(
+                            session_id=user_session.session_id,
+                            role="assistant",
+                            content="",  # Empty content as the message is a tool call
+                            metadata=tool_calls_metadata
+                        )
+                        await db.commit()
+
+                        # Save tool results as separate messages
+                        for tool_result in tool_results_list:
+                            await session_manager.update_context(
+                                session_id=user_session.session_id,
+                                role="tool",
+                                content=tool_result["result"],
+                                metadata={"tool_name": tool_result["tool_name"]}
+                            )
+                            await db.commit()
+
+                        # Update context for the model
                         context_messages.append({
                             "role": "assistant",
                             "content": "",
@@ -405,7 +430,7 @@ class BotHandlers:
                             ]
                         })
                         
-                        # Add tool result messages with tool_name (Ollama API format)
+                        # Add tool results to context
                         for tool_result in tool_results_list:
                             context_messages.append({
                                 "role": "tool",
