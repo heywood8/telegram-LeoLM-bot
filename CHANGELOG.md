@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/heywood8/telegram-LeoLM-bot/compare/v1.0.0...v1.1.0) (2025-11-05)
+
+
+### Features
+
+* automate releases and improve CI/CD workflows ([53739e2](https://github.com/heywood8/telegram-LeoLM-bot/commit/53739e2b6ac91d4d4c8a396da8579f0eca1b4cfc))
+
 ## 1.0.0 (2025-11-05)
 
 
