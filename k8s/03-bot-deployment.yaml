@@ -19,7 +19,7 @@ spec:
       containers:
       - name: bot
        #image: #telegram-bot:latest  # Update with your actual image
-        image: telegram-bot:20251105-153349
+        image: telegram-bot:20251105-154225
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
