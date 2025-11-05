@@ -23,6 +23,10 @@ RUN poetry config virtualenvs.create true \
 # Production stage - only the runtime dependencies
 FROM python:3.11-slim AS production
 
+# Add a build argument for the version
+ARG BOT_VERSION=unknown
+ENV BOT_VERSION=${BOT_VERSION}
+
 WORKDIR /app
 
 # Install only runtime system dependencies

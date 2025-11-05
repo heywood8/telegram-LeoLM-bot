@@ -3,6 +3,7 @@
 import asyncio
 import signal
 import sys
+import os
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram.error import TelegramError
 import structlog
@@ -19,7 +20,8 @@ from bot.mcp.plugins.news import NewsMCP
 from bot.rate_limiter import RateLimiter
 from bot.handlers import BotHandlers
 from bot.utils import setup_logging
-from bot import __version__
+# Get version from environment variable, with a fallback
+BOT_VERSION = os.getenv("BOT_VERSION", "unknown")
 
 logger = structlog.get_logger()
 
@@ -131,7 +133,7 @@ class TelegramBot:
         
         startup_message = (
             f"🤖 *Bot Updated and Started*\n\n"
-            f"📦 Version: `{__version__}`\n"
+            f"📦 Version: `{BOT_VERSION}`\n"
             f"🧠 Model: `{config.llm.model_name}`\n"
             f"🔌 MCP Plugins: {mcp_count} ({mcp_names})\n"
             f"⚡ Mode: {'Webhook' if config.app.use_webhook else 'Polling'}\n\n"
@@ -253,7 +255,7 @@ async def main() -> None:
         log_format=config.app.log_format
     )
     
-    logger.info(f"Starting Telegram LLM Bot v{__import__('bot').__version__}")
+    logger.info(f"Starting Telegram LLM Bot v{BOT_VERSION}")
     
     bot = TelegramBot()
     
