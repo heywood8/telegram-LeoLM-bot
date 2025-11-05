@@ -15,6 +15,7 @@ from bot.llm.service import LLMService
 from bot.mcp.manager import MCPManager
 from bot.mcp.plugins import FileSystemMCP, DatabaseMCP
 from bot.mcp.plugins.web import WebMCP
+from bot.mcp.plugins.news import NewsMCP
 from bot.rate_limiter import RateLimiter
 from bot.handlers import BotHandlers
 from bot.utils import setup_logging
@@ -72,6 +73,10 @@ class TelegramBot:
             "search_engine": config.mcp.websearch_search_engine
         })
         await self.mcp_manager.register_mcp(web_mcp)
+        
+        # Register news plugin
+        news_mcp = NewsMCP({})
+        await self.mcp_manager.register_mcp(news_mcp)
         
         logger.info(f"Registered {len(self.mcp_manager.mcps)} MCP plugins")
         

@@ -339,6 +339,14 @@ class BotHandlers:
                     user_session.session_id
                 )
                 
+                # Add a "hint" for the model if the user's message suggests a news query
+                news_keywords = ["news", "headlines", "latest", "updates", "events", "новости", "события", "произошло"]
+                if any(keyword in message_text.lower() for keyword in news_keywords):
+                    context_messages.append({
+                        "role": "system",
+                        "content": "Hint: The user is asking for news. Use the 'news.get_headlines' tool."
+                    })
+                
                 # Retrieve MCP tools for automatic tool calling. If the underlying
                 # model or API rejects the tools parameter we'll fall back gracefully.
                 try:
@@ -377,6 +385,10 @@ class BotHandlers:
 
                 # Handle tool calls if present (proper tool_calls structure)
                 if hasattr(response, 'tool_calls') and response.tool_calls:
+                    # Log the tool calls returned by the model
+                    tool_names = [tc.function.name for tc in response.tool_calls]
+                    logger.info("Ollama returned tool calls", tool_names=tool_names)
+                    
                     tool_called = True
                     tool_results_list, websearch_called = await self._handle_tool_calls(response.tool_calls)
                     

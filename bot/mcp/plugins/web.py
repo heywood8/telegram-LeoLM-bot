@@ -52,8 +52,8 @@ class WebMCP(BaseMCP):
         return [
             {
                 "function": {
-                    "name": "web.run",  # Match the name the LLM is trying to use
-                    "description": "Fetch content from a URL or search the web",
+                    "name": "web.run",
+                    "description": "Fetch content from a URL or perform a general web search for non-news topics. For news, use the 'news.get_headlines' tool.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -63,13 +63,13 @@ class WebMCP(BaseMCP):
                             },
                             "source": {
                                 "type": "string",
-                                "description": "Source type: 'url' for direct URL access or 'news' for web search",
-                                "enum": ["url", "news"],
+                                "description": "Source type: 'url' for direct URL access or 'search' for a general web search",
+                                "enum": ["url", "search"],
                                 "default": "url"
                             },
                             "top_n": {
                                 "type": "integer",
-                                "description": "Number of search results (for news source)",
+                                "description": "Number of search results to return",
                                 "default": 5
                             }
                         },
