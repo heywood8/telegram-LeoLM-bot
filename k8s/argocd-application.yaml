@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: telegram-bot
+  # This should be the namespace where your Argo CD is installed.
+  # 'argocd' is the default.
+  namespace: argocd
+spec:
+  project: default
+
+  # Source of the application manifests
+  source:
+    repoURL: https://github.com/heywood8/telegram-LeoLM-bot.git
+    path: k8s
+    targetRevision: main
+
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telegram-bot
+
+  # Sync policy
+  syncPolicy:
+    automated:
+      # Automatically delete resources that are no longer in the Git repository
+      prune: true
+      # Automatically sync the application when it drifts from the desired state
+      selfHeal: true
+    syncOptions:
+      # Automatically create the destination namespace if it doesn't exist
+      - CreateNamespace=true
