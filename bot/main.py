@@ -206,6 +206,24 @@ class TelegramBot:
         
         logger.info("Shutting down bot...")
         
+        # Notify admins of shutdown
+        admin_ids = config.security.admin_ids
+        if admin_ids:
+            shutdown_message = (
+                f"🛑 *Bot Shutting Down*\n\n"
+                f"Bot `{self.application.bot.username}` is stopping."
+            )
+            for admin_id in admin_ids:
+                try:
+                    await self.application.bot.send_message(
+                        chat_id=admin_id,
+                        text=shutdown_message,
+                        parse_mode="Markdown"
+                    )
+                    logger.info(f"Sent shutdown notification to admin {admin_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to send shutdown notification to admin {admin_id}: {e}")
+        
         if self.application:
             await self.application.stop()
             await self.application.shutdown()
