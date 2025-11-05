@@ -453,10 +453,21 @@ class BotHandlers:
                         else:
                             # Check if model returned tool calls again (shouldn't happen but some models do)
                             if hasattr(final_response, 'tool_calls') and final_response.tool_calls:
-                                logger.warning("Model returned tool calls in synthesis step, ignoring and using error message")
-                                # Collect all tool results into a readable format
-                                results_summary = "\n".join([f"- {r['tool_name']}: {r['result'][:100]}..." for r in tool_results_list])
-                                response_text = f"На основе полученных данных:\n{results_summary}\n\nК сожалению, не удалось синтезировать ответ."
+                                logger.warning("Model returned tool calls in synthesis step. Summarizing results manually.")
+                                # Manually summarize the tool results instead of showing an error
+                                response_text = "Вот результаты, которые я нашел:\n\n"
+                                for result in tool_results_list:
+                                    try:
+                                        # Try to parse the result as JSON for better formatting
+                                        data = json.loads(result['result'])
+                                        if 'formatted_text' in data:
+                                            response_text += data['formatted_text'] + "\n\n"
+                                        else:
+                                            # Fallback for other JSON structures
+                                            response_text += f"**{result['tool_name']}**:\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```\n\n"
+                                    except (json.JSONDecodeError, TypeError):
+                                        # Fallback for non-JSON results
+                                        response_text += f"**{result['tool_name']}**: {result['result']}\n\n"
                             else:
                                 try:
                                     response_text = getattr(final_response, 'content', str(final_response))
