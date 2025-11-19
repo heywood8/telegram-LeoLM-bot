@@ -15,7 +15,7 @@ class TelegramConfig(BaseSettings):
 
 class LLMConfig(BaseSettings):
     """LLM configuration"""
-    
+
     provider: str = Field("ollama", validation_alias="LLM_PROVIDER")
     base_url: str = Field("https://ollama.com/v1", validation_alias="LLM_BASE_URL")
     model_name: str = Field("gpt-oss:120b-cloud", validation_alias="LLM_MODEL_NAME")
@@ -23,6 +23,12 @@ class LLMConfig(BaseSettings):
     temperature: float = Field(0.7, validation_alias="LLM_TEMPERATURE")
     max_tokens: int = Field(2048, validation_alias="LLM_MAX_TOKENS")
     timeout: int = Field(60, validation_alias="LLM_TIMEOUT")
+    request_timeout: int = Field(30, validation_alias="LLM_REQUEST_TIMEOUT")
+    retry_attempts: int = Field(3, validation_alias="LLM_RETRY_ATTEMPTS")
+    retry_min_wait: int = Field(2, validation_alias="LLM_RETRY_MIN_WAIT")
+    retry_max_wait: int = Field(10, validation_alias="LLM_RETRY_MAX_WAIT")
+    circuit_breaker_failures: int = Field(5, validation_alias="LLM_CIRCUIT_BREAKER_FAILURES")
+    circuit_breaker_timeout: int = Field(60, validation_alias="LLM_CIRCUIT_BREAKER_TIMEOUT")
 
 
 class DatabaseConfig(BaseSettings):
@@ -84,13 +90,15 @@ class RateLimitConfig(BaseSettings):
 
 class ResourceLimits(BaseSettings):
     """Resource limits configuration"""
-    
+
     max_message_length: int = Field(4096, validation_alias="MAX_MESSAGE_LENGTH")
     max_history_messages: int = Field(50, validation_alias="MAX_HISTORY_MESSAGES")
     max_context_tokens: int = Field(8000, validation_alias="MAX_CONTEXT_TOKENS")
     max_file_size: int = Field(20 * 1024 * 1024, validation_alias="MAX_FILE_SIZE")
     max_concurrent_llm_calls: int = Field(10, validation_alias="MAX_CONCURRENT_LLM_CALLS")
     max_mcp_execution_time: int = Field(30, validation_alias="MAX_MCP_EXECUTION_TIME")
+    tool_execution_timeout: int = Field(15, validation_alias="TOOL_EXECUTION_TIMEOUT")
+    tool_retry_attempts: int = Field(2, validation_alias="TOOL_RETRY_ATTEMPTS")
 
 
 class AppConfig(BaseSettings):

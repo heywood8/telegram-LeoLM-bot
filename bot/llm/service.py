@@ -3,8 +3,18 @@
 from typing import Dict, List, Optional, Union, AsyncGenerator
 import json
 import structlog
+import asyncio
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+    after_log
+)
+from circuitbreaker import circuit
 
-from bot.llm.base import BaseLLMProvider
+from bot.llm.base import BaseLLMProvider, LLMError
 from bot.config import config
 
 logger = structlog.get_logger()
@@ -70,6 +80,69 @@ class LLMService:
 Если был использован веб-поиск, упомяни в ответе, что информация получена из интернета и приложи форматированную ссылку.
 """
 
+    @retry(
+        stop=stop_after_attempt(config.llm.retry_attempts),
+        wait=wait_exponential(
+            multiplier=1,
+            min=config.llm.retry_min_wait,
+            max=config.llm.retry_max_wait
+        ),
+        retry=retry_if_exception_type((LLMError, asyncio.TimeoutError, ConnectionError)),
+        before_sleep=before_sleep_log(logger, "WARNING"),
+        after=after_log(logger, "INFO")
+    )
+    @circuit(
+        failure_threshold=config.llm.circuit_breaker_failures,
+        recovery_timeout=config.llm.circuit_breaker_timeout,
+        expected_exception=LLMError
+    )
+    async def _generate_with_retry(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        tools: Optional[List[Dict]],
+        stream: bool
+    ) -> Union[str, AsyncGenerator[str, None]]:
+        """Generate response with retry logic and circuit breaker.
+
+        This method wraps the provider.generate() call with:
+        - Exponential backoff retry (configured attempts)
+        - Circuit breaker pattern (prevents cascade failures)
+        - Timeout enforcement
+
+        Raises:
+            LLMError: If all retry attempts fail
+            asyncio.TimeoutError: If request exceeds timeout
+        """
+        try:
+            # Enforce timeout on LLM requests
+            async with asyncio.timeout(config.llm.request_timeout):
+                return await self.provider.generate(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    tools=tools,
+                    stream=stream
+                )
+        except asyncio.TimeoutError:
+            logger.error(
+                "LLM request timeout",
+                timeout=config.llm.request_timeout,
+                message_count=len(messages)
+            )
+            raise LLMError(f"LLM request timed out after {config.llm.request_timeout}s")
+        except Exception as e:
+            logger.error(
+                "LLM generation error",
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            # Convert provider-specific errors to LLMError for retry logic
+            if not isinstance(e, LLMError):
+                raise LLMError(f"LLM generation failed: {str(e)}") from e
+            raise
+
     async def process_message(
         self,
         user_message: str,
@@ -79,16 +152,16 @@ class LLMService:
         stream: bool = False
     ) -> Union[str, AsyncGenerator[str, None]]:
         """Process user message with context and MCP data"""
-        
+
         # Generate system prompt based on whether tools are available
         system_prompt = self._load_system_prompt(has_tools=tools is not None and len(tools) > 0)
-        
+
         # Build messages array
         messages = [{"role": "system", "content": system_prompt}]
-        
+
         # Add conversation history
         messages.extend(context)
-        
+
         # Inject MCP context if available
         if mcp_context:
             mcp_content = self._format_mcp_context(mcp_context)
@@ -96,19 +169,19 @@ class LLMService:
                 "role": "system",
                 "content": f"Additional context from tools:\n{mcp_content}"
             })
-        
+
         # Add current user message
         messages.append({"role": "user", "content": user_message})
-        
+
         logger.info(
             "Processing message",
             message_count=len(messages),
             has_tools=tools is not None,
             stream=stream
         )
-        
-        # Generate response
-        return await self.provider.generate(
+
+        # Generate response with retry logic and circuit breaker
+        return await self._generate_with_retry(
             messages=messages,
             temperature=config.llm.temperature,
             max_tokens=config.llm.max_tokens,

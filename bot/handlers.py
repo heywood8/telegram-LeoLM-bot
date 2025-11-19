@@ -5,7 +5,15 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import structlog
 import json
+import asyncio
 from telegramify_markdown import convert
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log
+)
 
 from bot.session import SessionManager
 import re
@@ -45,7 +53,8 @@ class BotHandlers:
         message,
         user,
         chat_id: int,
-        message_text: str
+        message_text: str,
+        db
     ) -> tuple[bool, str | None]:
         """Handle system prompt update from admin.
 
@@ -54,6 +63,7 @@ class BotHandlers:
             user: Telegram user object
             chat_id: Chat ID
             message_text: Message text
+            db: Database session (reused from parent handler)
 
         Returns:
             tuple: (was_handled, response_message)
@@ -74,42 +84,39 @@ class BotHandlers:
             return True, "❌ Установка системного промпта отменена."
 
         try:
-            # Store the new prompt in database
-            from bot.database import async_session_factory
+            # Store the new prompt in database (reuse existing session)
             from bot.models import SystemPrompt, User
-            from sqlalchemy import select
+            from sqlalchemy import select, update
 
-            async with async_session_factory() as db:
-                # Get or create user record
-                result = await db.execute(select(User).where(User.telegram_id == user.id))
-                db_user = result.scalar_one_or_none()
-                if not db_user:
-                    db_user = User(
-                        telegram_id=user.id,
-                        username=user.username,
-                        first_name=user.first_name,
-                        last_name=user.last_name,
-                        is_admin=True
-                    )
-                    db.add(db_user)
-                    await db.flush()
-
-                # Import text for raw SQL
-                from sqlalchemy import text
-
-                # Deactivate old prompts
-                await db.execute(
-                    text("UPDATE system_prompts SET is_active = false WHERE is_active = true")
+            # Get or create user record
+            result = await db.execute(select(User).where(User.telegram_id == user.id))
+            db_user = result.scalar_one_or_none()
+            if not db_user:
+                db_user = User(
+                    telegram_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    is_admin=True
                 )
+                db.add(db_user)
+                await db.flush()
 
-                # Create new prompt
-                new_prompt = SystemPrompt(
-                    prompt=message_text,
-                    set_by_user_id=db_user.id,
-                    is_active=True
-                )
-                db.add(new_prompt)
-                await db.commit()
+            # Deactivate old prompts using ORM instead of raw SQL
+            await db.execute(
+                update(SystemPrompt)
+                .where(SystemPrompt.is_active == True)
+                .values(is_active=False)
+            )
+
+            # Create new prompt
+            new_prompt = SystemPrompt(
+                prompt=message_text,
+                set_by_user_id=db_user.id,
+                is_active=True
+            )
+            db.add(new_prompt)
+            await db.commit()
 
             # Update the LLM service
             self.llm_service.update_system_prompt(message_text)
@@ -121,7 +128,7 @@ class BotHandlers:
             )
             return True, "✅ Системный промпт успешно обновлен!"
         except Exception as e:
-            logger.error(f"Failed to update system prompt: {e}", exc_info=True)
+            logger.error("Failed to update system prompt", error=str(e), exc_info=True)
             return True, "❌ Не удалось обновить системный промпт."
 
     def _clean_message_text(self, message_text: str) -> str:
@@ -683,47 +690,48 @@ class BotHandlers:
         return response_text, tool_called, websearch_called
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle regular messages (orchestrator pattern)"""
+        """Handle regular messages (orchestrator pattern with reused db session)"""
         user = update.effective_user
         message = update.message
         message_text = message.text
         chat_id = message.chat.id
 
-        # 1. Check if this is a system prompt update from an admin
-        was_handled, response_msg = await self._handle_system_prompt_update(
-            message, user, chat_id, message_text
-        )
-        if was_handled:
-            if response_msg:
-                await message.reply_text(response_msg)
-            return
-
-        # 2. Clean message text
-        message_text = self._clean_message_text(message_text)
-
-        # 3. Check if bot is addressed in group chats
-        is_addressed, message_text = self._check_group_chat_addressing(
-            message, message_text, context
-        )
-        if not is_addressed:
-            return
-
-        # 4. Check rate limit
-        should_continue, error_msg = await self._check_rate_limit(update, user)
-        if not should_continue:
-            await update.message.reply_text(error_msg)
-            return
-
-        # 5. Send typing indicator
-        try:
-            await update.message.chat.send_action("typing")
-        except Exception as e:
-            logger.warning("Failed to send typing action", exc_info=e)
-
-        # 6. Process message with LLM
+        # Create database session once for entire handler lifecycle
         try:
             from bot.database import async_session_factory
             async with async_session_factory() as db:
+                # 1. Check if this is a system prompt update from an admin (reuse db session)
+                was_handled, response_msg = await self._handle_system_prompt_update(
+                    message, user, chat_id, message_text, db
+                )
+                if was_handled:
+                    if response_msg:
+                        await message.reply_text(response_msg)
+                    return
+
+                # 2. Clean message text
+                message_text = self._clean_message_text(message_text)
+
+                # 3. Check if bot is addressed in group chats
+                is_addressed, message_text = self._check_group_chat_addressing(
+                    message, message_text, context
+                )
+                if not is_addressed:
+                    return
+
+                # 4. Check rate limit
+                should_continue, error_msg = await self._check_rate_limit(update, user)
+                if not should_continue:
+                    await update.message.reply_text(error_msg)
+                    return
+
+                # 5. Send typing indicator
+                try:
+                    await update.message.chat.send_action("typing")
+                except Exception as e:
+                    logger.warning("Failed to send typing action", exc_info=e)
+
+                # 6. Process message with LLM (reuse db session)
                 session_manager = SessionManager(db)
                 user_session = await session_manager.get_session(
                     chat_id, user.id, telegram_user=user
@@ -733,14 +741,14 @@ class BotHandlers:
                     user_session, message_text, message, user, db
                 )
 
-            # 7. Send response to user
-            await self._send_response(
-                update, response_text, user, message_text,
-                tool_called, websearch_called
-            )
+                # 7. Send response to user
+                await self._send_response(
+                    update, response_text, user, message_text,
+                    tool_called, websearch_called
+                )
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
+            logger.error("Error processing message", error=str(e), exc_info=True)
             try:
                 await update.message.reply_text(
                     "❌ Я видимо сплю, попробуй спросить позже."
@@ -748,39 +756,89 @@ class BotHandlers:
             except Exception as e2:
                 logger.warning("Failed to send error reply_text", exc_info=e2)
 
+    async def _execute_single_tool_with_retry(
+        self,
+        tool_name: str,
+        parameters: dict
+    ) -> str:
+        """Execute a single tool call with retry logic and timeout.
+
+        Args:
+            tool_name: Name of the tool to execute
+            parameters: Tool parameters
+
+        Returns:
+            str: Tool result as JSON string or error message
+
+        Raises:
+            Exception: If all retry attempts fail
+        """
+        @retry(
+            stop=stop_after_attempt(config.resource_limits.tool_retry_attempts),
+            wait=wait_exponential(multiplier=1, min=1, max=5),
+            retry=retry_if_exception_type((ConnectionError, TimeoutError, asyncio.TimeoutError)),
+            before_sleep=before_sleep_log(logger, "WARNING")
+        )
+        async def _execute_with_timeout():
+            """Execute tool with timeout enforcement"""
+            try:
+                async with asyncio.timeout(config.resource_limits.tool_execution_timeout):
+                    result = await self.mcp_manager.execute_tool(tool_name, parameters)
+                    return json.dumps(result, ensure_ascii=False) if isinstance(result, (dict, list)) else str(result)
+            except asyncio.TimeoutError:
+                error_msg = f"Tool execution timed out after {config.resource_limits.tool_execution_timeout}s"
+                logger.error(
+                    "Tool execution timeout",
+                    tool_name=tool_name,
+                    timeout=config.resource_limits.tool_execution_timeout
+                )
+                raise TimeoutError(error_msg)
+
+        return await _execute_with_timeout()
+
     async def _handle_tool_calls(self, tool_calls) -> tuple[list[dict], bool]:
-        """Handle tool calls from LLM
-        
+        """Handle tool calls from LLM with retry logic and timeout enforcement.
+
         Returns:
             tuple: (list of tool results with tool_name, websearch_called)
                    Each result is {"tool_name": str, "result": str}
         """
         results = []
         websearch_called = False
-        
+
         for tool_call in tool_calls:
             tool_name = tool_call.function.name
             parameters = json.loads(tool_call.function.arguments)
-            
+
             # Track if web_search was called
             if tool_name == "web_search":
                 websearch_called = True
-            
+
             try:
-                result = await self.mcp_manager.execute_tool(tool_name, parameters)
-                result_str = json.dumps(result, ensure_ascii=False) if isinstance(result, (dict, list)) else str(result)
+                result_str = await self._execute_single_tool_with_retry(tool_name, parameters)
                 results.append({
                     "tool_name": tool_name,
                     "result": result_str
                 })
-                logger.info(f"Tool call succeeded: {tool_name}", parameters=parameters)
+                logger.info(
+                    "Tool call succeeded",
+                    tool_name=tool_name,
+                    parameters=parameters
+                )
             except Exception as e:
+                error_msg = f"Error: {str(e)}"
                 results.append({
                     "tool_name": tool_name,
-                    "result": f"Error: {str(e)}"
+                    "result": error_msg
                 })
-                logger.error(f"Tool call failed: {tool_name}", error=str(e), parameters=parameters)
-        
+                logger.error(
+                    "Tool call failed after retries",
+                    tool_name=tool_name,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    parameters=parameters
+                )
+
         return results, websearch_called
     
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
