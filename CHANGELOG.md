@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/heywood8/telegram-LeoLM-bot/compare/v1.1.0...v1.2.0) (2025-11-19)
+
+
+### Features
+
+* Add comprehensive P0 test coverage ([ce8d2ba](https://github.com/heywood8/telegram-LeoLM-bot/commit/ce8d2ba285eb23ce85eec2a7c31a6758ef523bcc))
+* Implement error handling and resilience improvements (P1.2) ([21f34db](https://github.com/heywood8/telegram-LeoLM-bot/commit/21f34db8af6271199ff2e45e4470b0c0e9dcc17b))
+
 ## [1.1.0](https://github.com/heywood8/telegram-LeoLM-bot/compare/v1.0.0...v1.1.0) (2025-11-05)
 
 
